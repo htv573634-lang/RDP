@@ -15,15 +15,12 @@ jobs:
       run: |
         Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "P@ssw0rd!" -Force)
         Write-Host "✅ Password Configured"
-    - name: Install SSH Client
-      run: |
-        Add-WindowsCapability -Online -Name OpenSSH.Client~~~~0.0.1.0
-    - name: Start Pinggy Tunnel
+    - name: Start Tunnel
       run: |
         Write-Host "============================================"
-        Write-Host " PINGGY TUNNEL - LOOK FOR THE URL BELOW"
+        Write-Host " LOCALHOST.RUN TUNNEL"
         Write-Host "============================================"
-        ssh -tt -p 443 -o StrictHostKeyChecking=no -R0:127.0.0.1:3389 tcp@free.pinggy.io
+        ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -R 0:localhost:3389 nokey@localhost.run
       timeout-minutes: 350
     - name: Keep Alive
       if: always()
