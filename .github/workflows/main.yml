@@ -10,22 +10,27 @@ jobs:
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
-        Write-Host "✅ RDP Enabled"
     - name: Set Password
       run: |
         Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "P@ssw0rd!" -Force)
-        Write-Host "✅ Password Configured"
-    - name: Start Tunnel
+    - name: Install Rust
       run: |
-        Write-Host "============================================"
-        Write-Host " LOCALHOST.RUN TUNNEL"
-        Write-Host "============================================"
-        ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -R 0:localhost:3389 nokey@localhost.run
+        Invoke-WebRequest https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe -OutFile rustup-init.exe
+        .\rustup-init.exe -y
+        $env:Path += ";$env:USERPROFILE\.cargo\bin"
+    - name: Install bore
+      run: |
+        $env:Path += ";$env:USERPROFILE\.cargo\bin"
+        cargo install bore-cli
+    - name: Start bore tunnel
+      run: |
+        $env:Path += ";$env:USERPROFILE\.cargo\bin"
+        bore local 3389 --to bore.pub
       timeout-minutes: 350
     - name: Keep Alive
       if: always()
       run: |
         while ($true) {
           Start-Sleep -Seconds 3600
-          Write-Host "Still alive... $(Get-Date)"
+          Write-Host "Alive... $(Get-Date)"
         }
