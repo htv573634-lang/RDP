@@ -1,32 +1,59 @@
-name: Window 10
+name: Windows RDP Server for Android TV
+
 on: [push, workflow_dispatch]
+
 jobs:
   build:
     runs-on: windows-latest
     timeout-minutes: 9999
     steps:
-    - name: Enable TS
+    - name: Create User 123 and Disable Password Complexity
+      run: |
+        # Disable password complexity requirements to allow "123"
+        secedit /export /cfg C:\secpol.cfg
+        (Get-Content C:\secpol.cfg) -Replace "PasswordComplexity = 1", "PasswordComplexity = 0" | Set-Content C:\secpol.cfg
+        secedit /configure /db C:\Windows\security\local.sdb /cfg C:\secpol.cfg /areas SECURITYPOLICY
+        Remove-Item C:\secpol.cfg -Force
+        
+        # Create user 123 with password 123
+        net user 123 123 /add
+        
+        # Add user 123 to Administrators and Remote Desktop Users groups
+        net localgroup Administrators 123 /add
+        net localgroup "Remote Desktop Users" 123 /add
+
+    - name: Enable TS and Configure for Android TV (Disable NLA)
       run: |
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
-    - name: Set Password
-      run: |
-        Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "P@ssw0rd!" -Force)
+        
+        # CRITICAL FIX 1: Disable Network Level Authentication (NLA)
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
+        
+        # CRITICAL FIX 2: Lower Security Layer to bypass SHA-2 strictness
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "SecurityLayer" -Value 0
+        
+        # Start the RDP service
+        Set-Service -Name TermService -StartupType Automatic
+        Start-Service -Name TermService
+
     - name: Install Rust
       run: |
         Invoke-WebRequest https://static.rust-lang.org/rustup/dist/x86_64-pc-windows-msvc/rustup-init.exe -OutFile rustup-init.exe
         .\rustup-init.exe -y
         $env:Path += ";$env:USERPROFILE\.cargo\bin"
+
     - name: Install bore
       run: |
         $env:Path += ";$env:USERPROFILE\.cargo\bin"
         cargo install bore-cli
+
     - name: Start bore tunnel
       run: |
         $env:Path += ";$env:USERPROFILE\.cargo\bin"
         bore local 3389 --to bore.pub
       timeout-minutes: 350
+
     - name: Keep Alive
       if: always()
       run: |
