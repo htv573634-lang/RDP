@@ -1,4 +1,4 @@
-name: Windows RDP Server via Tailscale
+name: Windows RDP via Ngrok
 
 on: [push, workflow_dispatch]
 
@@ -7,9 +7,10 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 360
     steps:
-    - name: Disable Password Policy & Create User 123
+    - name: Create User 123 and Configure RDP
       shell: powershell
       run: |
+        # 1. Disable Password Policy & Create User 123
         secedit /export /cfg C:\secpol.cfg
         (Get-Content C:\secpol.cfg) -Replace "PasswordComplexity = 1", "PasswordComplexity = 0" `
                                      -Replace "MinimumPasswordLength = 6", "MinimumPasswordLength = 1" `
@@ -19,12 +20,8 @@ jobs:
         net user "123" "123" /add
         net localgroup "Administrators" "123" /add
         net localgroup "Remote Desktop Users" "123" /add
-        echo "RDP_USER=123" >> $env:GITHUB_ENV
-        echo "RDP_PASS=123" >> $env:GITHUB_ENV
 
-    - name: Enable RDP & Disable NLA
-      shell: powershell
-      run: |
+        # 2. Enable RDP & Disable NLA (Crucial for older TV apps)
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
@@ -32,23 +29,22 @@ jobs:
         Set-Service -Name TermService -StartupType Automatic
         Start-Service -Name TermService
 
-    - name: Connect to Tailscale
-      uses: tailscale/github-action@v4
-      with:
-        authkey: ${{ secrets.TAILSCALE_TOKEN }}
-
-    - name: Get Tailscale IP
+    - name: Download and Start Ngrok
       shell: powershell
       run: |
-        $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
-        echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
-
-    - name: Display Connection Details and Keep Alive
-      shell: powershell
-      run: |
+        # Download Ngrok
+        Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
+        Expand-Archive ngrok.zip -DestinationPath C:\ngrok
+        $env:Path += ";C:\ngrok"
+        
+        # Authenticate Ngrok
+        ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+        
+        # Print instructions
         Write-Host "================ RDP IS READY ================"
-        Write-Host "IP Address: ${{ env.TAILSCALE_IP }}"
-        Write-Host "Username : ${{ env.RDP_USER }}"
-        Write-Host "Password : ${{ env.RDP_PASS }}"
+        Write-Host "Username : 123"
+        Write-Host "Password : 123"
         Write-Host "=============================================="
-        while ($true) { Start-Sleep 300 }
+        
+        # Start Ngrok
+        ngrok tcp 3389 --log=stdout
