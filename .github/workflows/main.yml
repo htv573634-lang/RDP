@@ -1,4 +1,4 @@
-name: Windows RDP via Ngrok
+name: Windows RDP via Serveo
 
 on: [push, workflow_dispatch]
 
@@ -21,7 +21,7 @@ jobs:
         net localgroup "Administrators" "123" /add
         net localgroup "Remote Desktop Users" "123" /add
 
-        # 2. Enable RDP & Disable NLA (Crucial for older TV apps)
+        # 2. Enable RDP & Disable NLA (Crucial for TV apps)
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
@@ -29,22 +29,14 @@ jobs:
         Set-Service -Name TermService -StartupType Automatic
         Start-Service -Name TermService
 
-    - name: Download and Start Ngrok
+    - name: Start Serveo Tunnel
       shell: powershell
       run: |
-        # Download Ngrok
-        Invoke-WebRequest https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
-        Expand-Archive ngrok.zip -DestinationPath C:\ngrok
-        $env:Path += ";C:\ngrok"
-        
-        # Authenticate Ngrok
-        ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
-        
-        # Print instructions
         Write-Host "================ RDP IS READY ================"
         Write-Host "Username : 123"
         Write-Host "Password : 123"
         Write-Host "=============================================="
+        Write-Host "Look below for the 'Forwarding TCP connections from serveo.net:XXXXX' line"
         
-        # Start Ngrok
-        ngrok tcp 3389 --log=stdout
+        # Start the free Serveo tunnel
+        ssh -o StrictHostKeyChecking=no -R 3389:localhost:3389 serveo.net
