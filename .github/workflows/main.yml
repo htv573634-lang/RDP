@@ -38,5 +38,5 @@ jobs:
         Write-Host "=============================================="
         Write-Host "Look below for the 'Forwarding TCP connections from serveo.net:XXXXX' line"
         
-        # Start the free Serveo tunnel
-        ssh -o StrictHostKeyChecking=no -R 3389:localhost:3389 serveo.net
+        # The fix: use -R 0 for a random port
+        ssh -o StrictHostKeyChecking=no -R 0:localhost:3389 serveo.net
