@@ -10,26 +10,15 @@ jobs:
     - name: Disable Password Policy & Create User 123
       shell: powershell
       run: |
-        # 1. Export current security policy
         secedit /export /cfg C:\secpol.cfg
-        
-        # 2. Modify the policy to disable complexity and lower minimum length
         (Get-Content C:\secpol.cfg) -Replace "PasswordComplexity = 1", "PasswordComplexity = 0" `
                                      -Replace "MinimumPasswordLength = 6", "MinimumPasswordLength = 1" `
                                      | Set-Content C:\secpol.cfg
-        
-        # 3. Apply the modified policy
         secedit /configure /db C:\Windows\security\local.sdb /cfg C:\secpol.cfg /areas SECURITYPOLICY
         Remove-Item C:\secpol.cfg -Force
-
-        # 4. Now create user '123' with password '123'
         net user "123" "123" /add
-        
-        # 5. Add user to Administrators and Remote Desktop Users groups
         net localgroup "Administrators" "123" /add
         net localgroup "Remote Desktop Users" "123" /add
-
-        # 6. Export credentials for the log step
         echo "RDP_USER=123" >> $env:GITHUB_ENV
         echo "RDP_PASS=123" >> $env:GITHUB_ENV
 
@@ -43,21 +32,16 @@ jobs:
         Set-Service -Name TermService -StartupType Automatic
         Start-Service -Name TermService
 
-    - name: Install and Connect Tailscale
+    - name: Connect to Tailscale
+      uses: tailscale/github-action@v4
+      with:
+        authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        args: --unattended --accept-routes
+
+    - name: Get Tailscale IP
       shell: powershell
       run: |
-        Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe" -OutFile "tailscale-setup.exe"
-        Start-Process -FilePath ".\tailscale-setup.exe" -ArgumentList "/S" -Wait
-        
-        & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=github-runner-$env:GITHUB_RUN_ID
-        
-        $tsIP = $null
-        for ($i=1; $i -le 15; $i++){ 
-          $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
-          if($tsIP){break} 
-          Start-Sleep 4 
-        }
-        if (-not $tsIP) { exit 1 }
+        $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
         echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
 
     - name: Display Connection Details and Keep Alive
