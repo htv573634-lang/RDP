@@ -7,25 +7,41 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 360
     steps:
-    - name: Configure RDP Service & Create User 123
+    - name: Disable Password Policy & Create User 123
       shell: powershell
       run: |
-        # Enable RDP and Firewall
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
-        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        # 1. Export current security policy
+        secedit /export /cfg C:\secpol.cfg
+        
+        # 2. Modify the policy to disable complexity and lower minimum length
+        (Get-Content C:\secpol.cfg) -Replace "PasswordComplexity = 1", "PasswordComplexity = 0" `
+                                     -Replace "MinimumPasswordLength = 6", "MinimumPasswordLength = 1" `
+                                     | Set-Content C:\secpol.cfg
+        
+        # 3. Apply the modified policy
+        secedit /configure /db C:\Windows\security\local.sdb /cfg C:\secpol.cfg /areas SECURITYPOLICY
+        Remove-Item C:\secpol.cfg -Force
 
-        # CRITICAL: Disable NLA and Lower Security Layer for older Android TV clients
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
-
-        # Create user '123' with password '123'
+        # 4. Now create user '123' with password '123'
         net user "123" "123" /add
+        
+        # 5. Add user to Administrators and Remote Desktop Users groups
         net localgroup "Administrators" "123" /add
         net localgroup "Remote Desktop Users" "123" /add
 
-        # Export credentials for the log step
+        # 6. Export credentials for the log step
         echo "RDP_USER=123" >> $env:GITHUB_ENV
         echo "RDP_PASS=123" >> $env:GITHUB_ENV
+
+    - name: Enable RDP & Disable NLA
+      shell: powershell
+      run: |
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
+        Set-Service -Name TermService -StartupType Automatic
+        Start-Service -Name TermService
 
     - name: Install and Connect Tailscale
       shell: powershell
@@ -33,10 +49,8 @@ jobs:
         Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe" -OutFile "tailscale-setup.exe"
         Start-Process -FilePath ".\tailscale-setup.exe" -ArgumentList "/S" -Wait
         
-        # Connect to your Tailnet using the secret we will set up next
         & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=github-runner-$env:GITHUB_RUN_ID
         
-        # Wait for the IP to be assigned
         $tsIP = $null
         for ($i=1; $i -le 15; $i++){ 
           $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
@@ -54,5 +68,4 @@ jobs:
         Write-Host "Username : ${{ env.RDP_USER }}"
         Write-Host "Password : ${{ env.RDP_PASS }}"
         Write-Host "=============================================="
-        # Keep the runner alive until the 6-hour limit
         while ($true) { Start-Sleep 300 }
